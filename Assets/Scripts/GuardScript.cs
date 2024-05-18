@@ -10,20 +10,42 @@ public class GuardScript : MonoBehaviour {
         Sleeping,
     };
 
-    [SerializeField] float visionRadius;
-    [SerializeField] float visionAngle;
-    [SerializeField] LayerMask visionLayers;
+    [SerializeField] CollisionTracker tracker;
 
+    [SerializeField] float turnVel;
     [SerializeField] float shootDelay;
     [SerializeField] GameObject bullet;
     [SerializeField] Transform bulletHolder;
+    [SerializeField] float searchPeriod;
 
     GuardState state;
     float shootWait;
+    float searchTimer;
+    bool targetFound;
+    Vector3 targetPos;
+    PatrolScript patrol;
 
     void Start() {
         state = GuardState.Patrolling;
         shootWait = 0.0f;
+        patrol = GetComponent<PatrolScript>();
+        tracker.RegisterHandlerEnter(coll => {
+            if (coll.gameObject.tag == "player") {
+                targetFound = true;
+                targetPos = coll.gameObject.transform.position;
+            }
+        });
+        tracker.RegisterHandlerStay(coll => {
+            if (coll.gameObject.tag == "player") {
+                targetFound = true;
+                targetPos = coll.gameObject.transform.position;
+            }
+        });
+        tracker.RegisterHandlerExit(coll => {
+            if (coll.gameObject.tag == "player") {
+                targetFound = false;
+            }
+        });
     }
 
     void Update() {
@@ -35,17 +57,37 @@ public class GuardScript : MonoBehaviour {
         // decrement cooldown
         shootWait = Mathf.Clamp(shootWait - Time.deltaTime, 0.0f, shootDelay);
 
-        ScanTarget();
-
         switch (state) {
             case GuardState.Patrolling:
-                if (GetComponent<PatrolScript>().HasReached()) {
-                    GetComponent<PatrolScript>().GoToNext();
+                if (ScanTarget()) {
+                    state = GuardState.Shooting;
+                    patrol.agentEnabled = false;
+                } else if (patrol.hasReached) {
+                    patrol.GoToNext();
                 }
                 break;
             case GuardState.Searching:
+                searchTimer = Mathf.Clamp(searchTimer - Time.deltaTime, 0.0f, searchPeriod);
+                if (Mathf.Approximately(searchTimer, 0.0f)) {
+                    state = GuardState.Patrolling;
+                } else if (targetFound && ScanTarget()) {
+                    state = GuardState.Shooting;
+                } else {
+                    transform.forward = Vector3.RotateTowards(transform.forward, (targetPos - transform.position).normalized, turnVel * Time.deltaTime * Mathf.Deg2Rad, 0.0f);
+                }
                 break;
             case GuardState.Shooting:
+                if (targetFound) {
+                    if (Mathf.Approximately(shootWait, 0.0f)) {
+                        shootWait = shootDelay;
+                        shootBullet(targetPos);
+                    }
+                } else {
+                    state = GuardState.Searching;
+                    searchTimer = searchPeriod;
+                    patrol.agentEnabled = true;
+                    patrol.destination = targetPos;
+                }
                 break;
             case GuardState.Sleeping:
                 break;
@@ -53,43 +95,35 @@ public class GuardScript : MonoBehaviour {
     }
 
     void changeCol() {
+        MeshRenderer renderer = GetComponent<MeshRenderer>();
         switch (state) {
             case GuardState.Patrolling:
-                GetComponent<MeshRenderer>().materials[0].color = Color.blue;
+                renderer.materials[0].color = Color.blue;
                 break;
             case GuardState.Searching:
-                GetComponent<MeshRenderer>().materials[0].color = Color.yellow;
+                renderer.materials[0].color = Color.yellow;
                 break;
             case GuardState.Shooting:
-                GetComponent<MeshRenderer>().materials[0].color = Color.red;
+                renderer.materials[0].color = Color.red;
                 break;
             case GuardState.Sleeping:
-                GetComponent<MeshRenderer>().materials[0].color = Color.grey;
+                renderer.materials[0].color = Color.grey;
                 break;
         }
     }
 
-    void ScanTarget() {
-        Collider[] collisions = Physics.OverlapSphere(transform.position, visionRadius, visionLayers, QueryTriggerInteraction.Ignore);
-        foreach (Collider collider in collisions) {
-            if (collider.gameObject.tag == "player") {
-                Vector3 dir = (collider.transform.position - transform.position).normalized;
-                if (Vector3.Dot(dir, transform.forward) >= Mathf.Cos((visionAngle * Mathf.Deg2Rad) / 2)) {
-                    if (Physics.Raycast(transform.position, collider.ClosestPoint(transform.position) - transform.position, out RaycastHit hitInfo, visionRadius, visionLayers)) {
-                        if (hitInfo.collider.gameObject.tag == "player") {
-                            shootBullet(collider.gameObject.transform.position);
-                        }
-                    }
+    bool ScanTarget() {
+        if (targetFound) {
+            if (Physics.Raycast(transform.position, targetPos - transform.position, out RaycastHit hitInfo)) {
+                if (hitInfo.collider.gameObject.tag == "player") {
+                    return true;
                 }
             }
         }
+        return false;
     }
 
     void shootBullet(Vector3 target) {
-        if (shootWait > 0.0f) {
-            return;
-        }
-        shootWait = shootDelay;
         GameObject bulletInst = Instantiate(bullet, bulletHolder);
         Vector3 bulletOrig = transform.position + (transform.forward * 1.0f);
         bulletInst.transform.position = bulletOrig;

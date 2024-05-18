@@ -4,31 +4,59 @@ using UnityEngine;
 
 public class CollisionTracker : MonoBehaviour {
 
-    [NonSerialized] public List<Collision> collisions;
-    [NonSerialized] public List<float> collisionsDur;
+    public delegate void Handler(Collider coll);
+
+    List<Handler> handlersEnter;
+    List<Handler> handlersStay;
+    List<Handler> handlersExit;
 
     void Start() {
-        collisions = new List<Collision>();
-        collisionsDur = new List<float>();
+        handlersEnter = new List<Handler>();
+        handlersStay = new List<Handler>();
+        handlersExit = new List<Handler>();
     }
 
     void Update() {        
     }
 
-    void OnCollisionEnter(Collision collision) {
-        collisions.Add(collision);
-        collisionsDur.Add(0.0f);
+    void OnTriggerEnter(Collider coll) {
+        foreach (Handler handler in handlersEnter) {
+            handler(coll);
+        }
     }
 
-    void OnCollisionExit(Collision collision) {
-        int idx = collisions.IndexOf(collision);
-        collisions.RemoveAt(idx);
-        collisionsDur.RemoveAt(idx);
+    void OnTriggerStay(Collider coll) {
+        foreach (Handler handler in handlersStay) {
+            handler(coll);
+        }
     }
 
-    void OnCollisionStay(Collision collision) {
-        int idx = collisions.IndexOf(collision);
-        collisionsDur[idx] += Time.deltaTime;
+    void OnTriggerExit(Collider coll) {
+        foreach (Handler handler in handlersExit) {
+            handler(coll);
+        }
     }
 
+    public void RegisterHandlerEnter(Handler handler) {
+        handlersEnter.Add(handler);
+    }
+
+    public void DeregisterHandlerEnter(Handler handler) {
+        handlersEnter.Remove(handler);
+    }
+
+    public void RegisterHandlerStay(Handler handler) {
+        handlersStay.Add(handler);
+    }
+
+    public void DeregisterHandlerStay(Handler handler) {
+        handlersStay.Remove(handler);
+    }
+    public void RegisterHandlerExit(Handler handler) {
+        handlersExit.Add(handler);
+    }
+
+    public void DeregisterHandlerExit(Handler handler) {
+        handlersExit.Remove(handler);
+    }
 }
